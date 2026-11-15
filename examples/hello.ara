@@ -1,0 +1,7 @@
+fn main() -> i32 {
+    i64 a = 20;
+    i64 b = 22;
+    i64 result = a + b;
+    print(result);
+    return 0;
+}
