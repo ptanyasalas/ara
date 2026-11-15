@@ -74,6 +74,6 @@ fn main() -> i32 {
 - Division by zero and signed division overflow currently follow the processor's fault behavior.
 - Local variables are stack allocated. There is no heap allocator or pointer syntax yet.
 - The assembly emitter targets the System V x86-64 ABI and uses `printf` for integer output.
-- The `-O0`, `-O2`, and `-O3` flags are accepted as placeholders; optimization passes are not implemented yet.
+- Only `-O0` is currently accepted. `-O2` and `-O3` are rejected until real optimization passes exist.
 
 ARA's long-term design includes a custom backend, static and dynamic tensor shapes, explicit memory management, SIMD, parallel execution, and GPU support. Those features must not be considered available until implemented and tested.
