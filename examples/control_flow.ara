@@ -1,0 +1,21 @@
+fn main() -> i32 {
+    i64 sum = 0;
+    i64 i = 0;
+
+    while (i < 5) {
+        sum = sum + i;
+        i = i + 1;
+    }
+
+    print(sum);
+
+    for (i64 j = 0; j < 5; j = j + 1) {
+        if (j == 3) {
+            print(300);
+        } else {
+            print(j);
+        }
+    }
+
+    return 0;
+}
