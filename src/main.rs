@@ -48,7 +48,7 @@ impl Lexer {
 enum Expr { Num(i64), Var(String), Unary(Tok,Box<Expr>), Binary(Tok,Box<Expr>,Box<Expr>) }
 #[derive(Clone,Debug)]
 enum Stmt {
-    Let(String,Expr), Assign(String,Expr), Print(Expr), Return(Expr),
+    Let(String,Expr), Assign(String,Expr), Print(Expr), Return(Expr), Break, Continue,
     Block(Vec<Stmt>), If(Expr,Box<Stmt>,Option<Box<Stmt>>),
     While(Expr,Box<Stmt>), For(Option<Box<Stmt>>,Option<Expr>,Option<Box<Stmt>>,Box<Stmt>),
 }
@@ -82,6 +82,8 @@ impl Parser {
             "i64"=>{let n=self.ident("expected variable name")?;self.expect(Tok::Eq,"expected '='")?;Stmt::Let(n,self.expr(0)?)},
             "print"=>{self.expect(Tok::LParen,"expected '('")?;let e=self.expr(0)?;self.expect(Tok::RParen,"expected ')'")?;Stmt::Print(e)},
             "return"=>Stmt::Return(self.expr(0)?),
+            "break"=>Stmt::Break,
+            "continue"=>Stmt::Continue,
             _=>{if self.eat(Tok::Eq){Stmt::Assign(w,self.expr(0)?)}else{return Err(self.err(&format!("unknown statement '{w}'")))}}
         };
         if semi{self.expect(Tok::Semi,"expected ';'")?;}Ok(s)
@@ -161,6 +163,8 @@ impl Gen{
             Stmt::Assign(n,e)=>{if !self.initialized.contains(n){return Err(format!("assignment to undeclared or uninitialized variable '{n}'"));}self.expr(e)?;let o=self.vars[n];self.line(&format!("    mov QWORD PTR [rbp-{o}], rax"));},
             Stmt::Print(e)=>{self.expr(e)?;self.line("    mov rsi, rax");self.line("    lea rdi, [rip + .Lara_fmt]");self.line("    xor eax, eax");self.line("    call printf@PLT");},
             Stmt::Return(e)=>{self.expr(e)?;self.line("    leave");self.line("    ret");},
+            Stmt::Break=>{let l=self.breaks.last().ok_or_else(||"break used outside a loop".to_string())?.clone();self.line(&format!("    jmp {l}"));},
+            Stmt::Continue=>{let l=self.continues.last().ok_or_else(||"continue used outside a loop".to_string())?.clone();self.line(&format!("    jmp {l}"));},
             Stmt::Block(b)=>for x in b{self.stmt(x)?;},
             Stmt::If(c,a,b)=>{let el=self.fresh("else");let end=self.fresh("ifend");self.expr(c)?;self.line("    test rax, rax");self.line(&format!("    je {el}"));let before=self.initialized.clone();self.stmt(a)?;let then_init=self.initialized.clone();if b.is_some(){self.line(&format!("    jmp {end}"));}self.line(&format!("{el}:"));self.initialized=before.clone();if let Some(x)=b{self.stmt(x)?;}let else_init=self.initialized.clone();self.initialized=if b.is_some(){then_init.intersection(&else_init).cloned().collect()}else{before};if b.is_some(){self.line(&format!("{end}:"));}},
             Stmt::While(c,b)=>{let top=self.fresh("while");let end=self.fresh("wend");let before=self.initialized.clone();self.line(&format!("{top}:"));self.expr(c)?;self.line("    test rax, rax");self.line(&format!("    je {end}"));self.breaks.push(end.clone());self.continues.push(top.clone());self.stmt(b)?;self.breaks.pop();self.continues.pop();self.line(&format!("    jmp {top}"));self.line(&format!("{end}:"));self.initialized=before;},
