@@ -108,7 +108,7 @@ impl Gen {
         let mut g=Gen{asm:String::new(),vars:Default::default(),initialized:HashSet::new(),slots:0};
         g.line(".intel_syntax noprefix");g.line(".text");g.line(".globl main");g.line(".type main, @function");g.line("main:");g.line("    push rbp");g.line("    mov rbp, rsp");
         // Reserve aligned stack space for all declared locals.
-        for s in stmts { if let Stmt::Let(n,_)=s {if g.vars.contains_key(n){return Err(format!("duplicate variable '{n}'"));}g.slots+=8;g.vars.insert(n.clone(),g.slots*8);} }
+        for s in stmts { if let Stmt::Let(n,_)=s {if g.vars.contains_key(n){return Err(format!("duplicate variable '{n}'"));}g.slots+=1;g.vars.insert(n.clone(),g.slots*8);} }
         let bytes=((g.slots*8+15)/16)*16;if bytes>0{g.line(&format!("    sub rsp, {bytes}"));}
         for s in stmts {match s {
             Stmt::Let(n,e)=>{g.expr(e)?;let off=g.vars[n];g.line(&format!("    mov QWORD PTR [rbp-{off}], rax"));g.initialized.insert(n.clone());},
