@@ -1,0 +1,12 @@
+[package]
+name = "ara"
+version = "0.1.0"
+edition = "2021"
+description = "The ARA programming language compiler"
+license = "MIT"
+
+[[bin]]
+name = "ara"
+path = "src/main.rs"
+
+[dependencies]
