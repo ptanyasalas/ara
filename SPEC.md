@@ -10,7 +10,7 @@ This document distinguishes the intended language from the features currently im
 - First-class vectors, matrices, and tensors.
 - Predictable low-level control with safe defaults where practical.
 
-## Current implementation: milestone 0
+## Current implementation: milestone 1
 
 The current compiler accepts exactly one function:
 
@@ -24,11 +24,13 @@ fn main() -> i32 {
 }
 ```
 
-Supported statements: `i64 name = expression;`, `name = expression;`, `print(expression);`, and `return expression;`.
+Supported statements: `i64 name = expression;`, `name = expression;`, `print(expression);`, `return expression;`, blocks, `if`/`else`, `while`, C-style `for`, `break`, and `continue`.
 
-Supported expressions: signed integer literals, local variables, unary `+` and `-`, parentheses, and binary `+`, `-`, `*`, `/`, `%`. Precedence follows conventional arithmetic rules.
+Supported expressions: signed integer literals, `true`/`false` (integer 1/0), local variables, unary `+`, `-`, `!`, parentheses, arithmetic `+`, `-`, `*`, `/`, `%`, comparisons `==`, `!=`, `<`, `<=`, `>`, `>=`, and logical `&&`, `||`. Precedence follows conventional rules. Logical operators are eager, not short-circuiting.
 
 The compiler emits GNU/AT&T-toolchain-compatible Intel-syntax x86-64 assembly for the System V ABI and links it using the host `cc` driver. It is currently intended for Linux x86-64.
+
+The compiler still supports only `main` with no parameters, only `i64` local declarations, and function-wide unique local names (no lexical scopes). There is no declared `bool` type yet. `break` and `continue` are rejected outside loops.
 
 ## Planned language rules (not yet implemented)
 
