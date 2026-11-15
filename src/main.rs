@@ -1,4 +1,4 @@
-use std::{env, fs, path::{Path, PathBuf}, process::Command};
+use std::{collections::{HashMap, HashSet}, env, fs, path::PathBuf, process::Command};
 
 #[derive(Clone, Debug, PartialEq)]
 enum Tok { Ident(String), Num(i64), LParen, RParen, LBrace, RBrace, Semi, Comma, Plus, Minus, Star, Slash, Percent, Eq, Arrow, Eof }
@@ -43,8 +43,8 @@ enum Expr { Num(i64), Var(String), Unary(char,Box<Expr>), Bin(char,Box<Expr>,Box
 enum Stmt { Let(String,Expr), Assign(String,Expr), Print(Expr), Return(Expr) }
 struct Parser { ts:Vec<Token>, p:usize }
 impl Parser {
-    fn cur(&self)->&Token { &self.ts[self.p] }
-    fn take(&mut self)->Token {let t=self.ts[self.p].clone();self.p+=1;t}
+    fn cur(&self)->&Token { &self.ts[self.p.min(self.ts.len()-1)] }
+    fn take(&mut self)->Token {let t=self.cur().clone();if t.kind!=Tok::Eof {self.p+=1;}t}
     fn err(&self,msg:&str)->String {format!("{}:{}: {msg}",self.cur().line,self.cur().col)}
     fn ident(&mut self, expected:&str)->Result<String,String> { match self.take().kind {Tok::Ident(s)=>Ok(s),_=>Err(self.err(&format!("expected {expected}")))}}
     fn eat(&mut self,k:Tok)->bool {if self.cur().kind==k {self.p+=1;true}else{false}}
@@ -90,13 +90,13 @@ impl Parser {
     }
 }
 
-struct Gen { asm:String, vars:std::collections::HashMap<String,i32>, slots:i32, label:u32 }
+struct Gen { asm:String, vars:HashMap<String,i32>, initialized:HashSet<String>, slots:i32 }
 impl Gen {
     fn line(&mut self,s:&str){self.asm.push_str(s);self.asm.push('\n');}
     fn expr(&mut self,e:&Expr)->Result<(),String>{
         match e {
             Expr::Num(n)=>self.line(&format!("    mov rax, {n}")),
-            Expr::Var(n)=>{let off=*self.vars.get(n).ok_or_else(||format!("unknown variable '{n}'"))?;self.line(&format!("    mov rax, QWORD PTR [rbp-{off}]"));},
+            Expr::Var(n)=>{if !self.initialized.contains(n) { return Err(format!("use of undeclared or uninitialized variable '{n}'")); } let off=*self.vars.get(n).ok_or_else(||format!("unknown variable '{n}'"))?;self.line(&format!("    mov rax, QWORD PTR [rbp-{off}]"));},
             Expr::Unary(op,x)=>{self.expr(x)?;if *op=='-' {self.line("    neg rax");}},
             Expr::Bin(op,a,b)=>{
                 self.expr(a)?; self.line("    push rax"); self.expr(b)?; self.line("    mov rcx, rax"); self.line("    pop rax");
@@ -105,14 +105,14 @@ impl Gen {
         } Ok(())
     }
     fn generate(stmts:&[Stmt])->Result<String,String>{
-        let mut g=Gen{asm:String::new(),vars:Default::default(),slots:0,label:0};
+        let mut g=Gen{asm:String::new(),vars:Default::default(),initialized:HashSet::new(),slots:0};
         g.line(".intel_syntax noprefix");g.line(".text");g.line(".globl main");g.line(".type main, @function");g.line("main:");g.line("    push rbp");g.line("    mov rbp, rsp");
         // Reserve aligned stack space for all declared locals.
         for s in stmts { if let Stmt::Let(n,_)=s {if g.vars.contains_key(n){return Err(format!("duplicate variable '{n}'"));}g.slots+=8;g.vars.insert(n.clone(),g.slots*8);} }
         let bytes=((g.slots*8+15)/16)*16;if bytes>0{g.line(&format!("    sub rsp, {bytes}"));}
         for s in stmts {match s {
-            Stmt::Let(n,e)=>{g.expr(e)?;let off=g.vars[n];g.line(&format!("    mov QWORD PTR [rbp-{off}], rax"));},
-            Stmt::Assign(n,e)=>{let off=*g.vars.get(n).ok_or_else(||format!("unknown variable '{n}'"))?;g.expr(e)?;g.line(&format!("    mov QWORD PTR [rbp-{off}], rax"));},
+            Stmt::Let(n,e)=>{g.expr(e)?;let off=g.vars[n];g.line(&format!("    mov QWORD PTR [rbp-{off}], rax"));g.initialized.insert(n.clone());},
+            Stmt::Assign(n,e)=>{if !g.initialized.contains(n) {return Err(format!("assignment to undeclared or uninitialized variable '{n}'"));}let off=*g.vars.get(n).ok_or_else(||format!("unknown variable '{n}'"))?;g.expr(e)?;g.line(&format!("    mov QWORD PTR [rbp-{off}], rax"));},
             Stmt::Print(e)=>{g.expr(e)?;g.line("    mov rsi, rax");g.line("    lea rdi, [rip + .Lara_fmt]");g.line("    xor eax, eax");g.line("    call printf@PLT");},
             Stmt::Return(e)=>{g.expr(e)?;g.line("    leave");g.line("    ret");}
         }}
@@ -128,7 +128,7 @@ fn run()->Result<(),String>{
     let args:Vec<String>=env::args().skip(1).collect();
     if args.len()<2 || args[0]!="build" {return Err("usage: ara build <file.ara> [-o executable] [--emit-asm]".into());}
     let input=PathBuf::from(&args[1]);let mut output=PathBuf::from(input.file_stem().unwrap_or_default());let mut emit=false;let mut i=2;
-    while i<args.len(){match args[i].as_str(){"-o"=>{i+=1;if i>=args.len(){return Err("missing path after -o".into());}output=PathBuf::from(&args[i]);},"--emit-asm"=>emit=true,"-O0"|" -O2"|"-O3"|"--target" => {},x=>return Err(format!("unknown option '{x}'"))}i+=1;}
+    while i<args.len(){match args[i].as_str(){"-o"=>{i+=1;if i>=args.len(){return Err("missing path after -o".into());}output=PathBuf::from(&args[i]);},"--emit-asm"=>emit=true,"-O0"=>{},"-O2"|"-O3"=>return Err("optimization levels above -O0 are not implemented yet".into()),"--target"=>return Err("only the x86-64 target is implemented".into()),x=>return Err(format!("unknown option '{x}'"))}i+=1;}
     let source=fs::read_to_string(&input).map_err(|e|format!("cannot read {}: {e}",input.display()))?;
     let tokens=Lexer::new(&source).tokens()?;let ast=Parser{ts:tokens,p:0}.program()?;let asm=Gen::generate(&ast)?;
     let asm_path=PathBuf::from(format!("{}.s",output.display()));fs::write(&asm_path,&asm).map_err(|e|format!("cannot write assembly: {e}"))?;
