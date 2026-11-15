@@ -16,3 +16,8 @@ jobs:
         run: cargo run --release -- build examples/hello.ara -o /tmp/ara-hello
       - name: Run example and verify output
         run: test "$(/tmp/ara-hello)" = "42"
+
+      - name: Compile control-flow example
+        run: cargo run --release -- build examples/control_flow.ara -o /tmp/ara-control-flow
+      - name: Run control-flow example and verify output
+        run: test "$(/tmp/ara-control-flow)" = "$(printf '10\n0\n1\n2\n300\n4')"
